@@ -159,7 +159,7 @@ def create_activity(access_token, name, activity_type, start_date, elapsed_time,
 # Function to get Strava authorization URL
 def get_auth_url():
     client_id = st.session_state.client_id
-    redirect_uri = "http://localhost:8501/"  # Streamlit default port
+    redirect_uri = "https://stravaflexa.onrender.com/"  # Streamlit default port
     scope = "activity:write"
     
     auth_url = (
