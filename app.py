@@ -25,6 +25,23 @@ def init_session_state():
         st.session_state.auth_success = False
     if 'debug_mode' not in st.session_state:
         st.session_state.debug_mode = False
+    if 'base_url' not in st.session_state:
+        st.session_state.base_url = get_base_url()
+
+# Function to get the current app's base URL
+def get_base_url():
+    # Try to get the URL from Streamlit's runtime config
+    try:
+        return st.runtime.get_instance().get_option("server.baseUrlPath") or st.experimental_get_query_params().get("streamlit_url", [""])[0]
+    except:
+        pass
+    
+    # If deployed on Streamlit Cloud, the URL is provided in the environment
+    if 'STREAMLIT_SHARING_BASE_URL' in st.secrets:
+        return st.secrets['STREAMLIT_SHARING_BASE_URL']
+    
+    # Fallback to default when running locally
+    return "http://localhost:8501"
 
 # Function to handle page navigation
 def set_phase(phase):
@@ -53,8 +70,7 @@ def save_credentials():
     st.session_state.client_secret = st.session_state.client_secret_input
     set_phase('authorization')
 
-# Parse CSV and Extract Details (Flexible Parsing)
-# Parse CSV and Extract Details (Exclude 'date' and 'athlete' columns)
+# Parse CSV and Extract Details
 def parse_csv(file):
     try:
         df = pd.read_csv(file)
@@ -156,11 +172,28 @@ def create_activity(access_token, name, activity_type, start_date, elapsed_time,
             st.write(f"Response Headers: {response.headers}")
         return None
 
+# Function to get current app URL
+def get_current_url():
+    # Ensure base_url is up to date
+    if 'base_url' not in st.session_state or not st.session_state.base_url:
+        st.session_state.base_url = get_base_url()
+    
+    base_url = st.session_state.base_url
+    
+    # Ensure the URL ends with a /
+    if not base_url.endswith('/'):
+        base_url += '/'
+        
+    return base_url
+
 # Function to get Strava authorization URL
 def get_auth_url():
     client_id = st.session_state.client_id
-    redirect_uri = "https://stravaflexa.onrender.com/"  # Streamlit default port
+    redirect_uri = get_current_url()  # Dynamic redirect URL
     scope = "activity:write"
+    
+    if st.session_state.debug_mode:
+        st.write(f"Debug - Redirect URI: {redirect_uri}")
     
     auth_url = (
         f"https://www.strava.com/oauth/authorize?"
@@ -253,6 +286,10 @@ def handle_upload():
 def main():
     init_session_state()
     
+    # Debug info about the current URL
+    if st.session_state.debug_mode:
+        st.sidebar.write(f"Current URL: {get_current_url()}")
+    
     # App settings in sidebar
     with st.sidebar:
         st.title("App Settings")
@@ -266,7 +303,7 @@ def main():
         # Reset button
         if st.button("Reset Application"):
             for key in list(st.session_state.keys()):
-                if key != 'debug_mode':  # Preserve debug setting
+                if key not in ['debug_mode', 'base_url']:  # Preserve debug setting and base_url
                     del st.session_state[key]
             st.session_state.phase = 'credentials'
             st.session_state.client_id = ''
