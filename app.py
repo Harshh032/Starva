@@ -187,7 +187,7 @@ def get_current_url():
 # Function to get Strava authorization URL
 def get_auth_url():
     client_id = st.session_state.client_id
-    redirect_uri = "https://stravaflexa.onrender.com"  # Streamlit default port
+    redirect_uri = "https://stravaflexa.onrender.com/"  # Streamlit default port
     scope = "activity:write"
     
     auth_url = (
