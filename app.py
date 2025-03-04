@@ -163,11 +163,12 @@ def get_current_url():
     """
     # Replace with your actual deployment URL
     return "https://stravaflexa.onrender.com/"
+
 # Function to get Strava authorization URL
 def get_auth_url():
     client_id = st.session_state.client_id
     
-    # Get current URL for redirect (works in both local and deployed environments)
+    # Get current URL for redirect (hardcoded to your deployment URL)
     current_url = get_current_url()
     
     # Store the current URL in session state for later use
