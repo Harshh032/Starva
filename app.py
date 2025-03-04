@@ -156,11 +156,14 @@ def create_activity(access_token, name, activity_type, start_date, elapsed_time,
             st.write(f"Response Headers: {response.headers}")
         return None
 
-# Function to get Strava authorization URL
+
 def get_current_url():
-    # Try to get the deployed URL from Streamlit's runtime config
+    """
+    Dynamically determine the current URL of the app.
+    Works for both local development and deployed environments.
+    """
     try:
-        # This will be the base URL from where the app is accessed
+        # Try to get the base URL from Streamlit's runtime config
         base_url = st.runtime.get_instance().get_option("browser.serverAddress")
         port = st.runtime.get_instance().get_option("browser.serverPort")
         
@@ -170,39 +173,34 @@ def get_current_url():
         else:
             # Deployed environment - construct URL without port
             return f"https://{base_url}/"
-    except:
-        # Fallback method: use a URL parameter to detect the current URL
+    except Exception as e:
+        # Fallback method: use query parameters or environment variables
         redirect_uri = st.query_params.get("current_url")
         if redirect_uri:
             return redirect_uri
         
-        # Last resort fallback for local development
-        return "http://localhost:8501/"
-
-# Function to get Strava authorization URL with dynamic redirect
+        # If no query parameter is found, check environment variables
+        import os
+        deployed_url = os.getenv("DEPLOYED_URL")  # Set this in your hosting environment
+        if deployed_url:
+            return deployed_url
+        
+        # Raise an error if no valid URL can be determined
+        raise ValueError("Unable to determine the current URL. Please set the DEPLOYED_URL environment variable.")
+# Function to get Strava authorization URL
 def get_auth_url():
     client_id = st.session_state.client_id
-    
-    # Get current URL for redirect (works in both local and deployed environments)
-    current_url = get_current_url()
-    
-    # Store the current URL in session state for later use
-    st.session_state.redirect_uri = current_url
-    
+    redirect_uri = "http://localhost:8501/"  # Streamlit default port
     scope = "activity:write"
     
     auth_url = (
         f"https://www.strava.com/oauth/authorize?"
         f"client_id={client_id}&"
         f"response_type=code&"
-        f"redirect_uri={current_url}&"
+        f"redirect_uri={redirect_uri}&"
         f"approval_prompt=force&"
         f"scope={scope}"
     )
-    
-    if st.session_state.debug_mode:
-        st.write(f"Auth URL generated with redirect to: {current_url}")
-    
     return auth_url
 
 # Check for authorization code in URL
