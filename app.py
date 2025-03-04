@@ -3,7 +3,6 @@ import pandas as pd
 import requests
 from datetime import datetime
 import time
-import os
 
 # Set page configuration
 st.set_page_config(
@@ -352,4 +351,4 @@ def main():
                 set_phase('authorization')
 
 if __name__ == "__main__":
-    main(host="0.0.0.0", port=os.getenv("PORT", 10000))
+    main()
