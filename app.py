@@ -167,12 +167,9 @@ def get_current_url():
         base_url = st.runtime.get_instance().get_option("browser.serverAddress")
         port = st.runtime.get_instance().get_option("browser.serverPort")
         
-        if "localhost" in base_url or "127.0.0.1" in base_url:
-            # Local development - construct URL with port
-            return f"http://{base_url}:{port}/"
-        else:
-            # Deployed environment - construct URL without port
-            return f"https://{base_url}/"
+        # Construct the URL without checking for localhost
+        return f"https://{base_url}/"
+    
     except Exception as e:
         # Fallback method: use query parameters or environment variables
         redirect_uri = st.query_params.get("current_url")
