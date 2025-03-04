@@ -19,6 +19,8 @@ def init_session_state():
         st.session_state.client_id = ''
     if 'client_secret' not in st.session_state:
         st.session_state.client_secret = ''
+    if 'redirect_uri' not in st.session_state:
+        st.session_state.redirect_uri = 'https://www.example.com'
     if 'auth_code' not in st.session_state:
         st.session_state.auth_code = ''
     if 'auth_success' not in st.session_state:
@@ -41,6 +43,10 @@ def save_credentials():
         st.error("Please enter a Client Secret.")
         return
     
+    if not st.session_state.redirect_uri_input:
+        st.error("Please enter a Redirect URI.")
+        return
+    
     try:
         # Test if client_id is a valid integer
         int(st.session_state.client_id_input)
@@ -51,26 +57,22 @@ def save_credentials():
     # Store credentials in session state
     st.session_state.client_id = st.session_state.client_id_input
     st.session_state.client_secret = st.session_state.client_secret_input
+    st.session_state.redirect_uri = st.session_state.redirect_uri_input
     set_phase('authorization')
 
-# Parse CSV and Extract Details (Flexible Parsing)
-# Parse CSV and Extract Details (Exclude 'date' and 'athlete' columns)
+# Parse CSV and Extract Details
 def parse_csv(file):
     try:
         df = pd.read_csv(file)
         description = ""
         
-        # Dynamically parse all columns except 'date' and 'athlete'
         for _, row in df.iterrows():
-            # Filter out unwanted columns
             filtered_row = {col: row[col] for col in df.columns if col.lower() not in ['date', 'athlete']}
-            
-            # Convert the filtered row into a string representation
             row_data = " | ".join([f"{col}: {val}" for col, val in filtered_row.items()])
             description += f"{row_data}\n"
         
         total_sets = len(df)
-        elapsed_time = max(total_sets * 30, 60)  # Minimum 60 seconds, or 30 seconds per set
+        elapsed_time = max(total_sets * 30, 60)
         return description, elapsed_time
     except Exception as e:
         st.error(f"Error parsing CSV: {str(e)}")
@@ -81,17 +83,26 @@ def generate_unique_name(base_name):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     return f"{base_name} - {timestamp}"
 
+# Function to verify the authorization code
+def verify_auth_code():
+    if not st.session_state.manual_auth_code:
+        st.error("Please enter an authorization code.")
+        return False
+    
+    st.session_state.auth_code = st.session_state.manual_auth_code
+    st.session_state.auth_success = True
+    set_phase('upload')
+    return True
+
 # Get access token
 def get_access_token(client_id, client_secret, code, debug=False):
     url = "https://www.strava.com/oauth/token"
     
-    # Check if client_id is empty
     if not client_id:
         st.error("Client ID is empty. Please enter a valid Client ID.")
         return None
     
     try:
-        # Try to convert client_id to integer
         client_id_int = int(client_id)
     except ValueError:
         st.error("Client ID must be a number. Please check your Client ID.")
@@ -126,15 +137,13 @@ def get_access_token(client_id, client_secret, code, debug=False):
 # Create a Custom Activity
 def create_activity(access_token, name, activity_type, start_date, elapsed_time, description=None, debug=False):
     url = "https://www.strava.com/api/v3/activities"
-    headers = {
-        "Authorization": f"Bearer {access_token}"
-    }
+    headers = {"Authorization": f"Bearer {access_token}"}
     payload = {
         "name": name,
         "type": activity_type,
         "start_date_local": start_date,
-        "elapsed_time": elapsed_time,  # in seconds
-        "description": description     # optional
+        "elapsed_time": elapsed_time,
+        "description": description
     }
     
     if debug or st.session_state.debug_mode:
@@ -156,54 +165,24 @@ def create_activity(access_token, name, activity_type, start_date, elapsed_time,
             st.write(f"Response Headers: {response.headers}")
         return None
 
-
-def get_current_url():
-    """
-    Hardcode the deployed URL for redirection.
-    """
-    # Replace with your actual deployment URL
-    return "https://stravaflexa.onrender.com/"
-
 # Function to get Strava authorization URL
 def get_auth_url():
     client_id = st.session_state.client_id
-    
-    # Get current URL for redirect (hardcoded to your deployment URL)
-    current_url = get_current_url()
-    
-    # Store the current URL in session state for later use
-    st.session_state.redirect_uri = current_url
-    
+    redirect_uri = st.session_state.redirect_uri
     scope = "activity:write"
     
     auth_url = (
         f"https://www.strava.com/oauth/authorize?"
         f"client_id={client_id}&"
+        f"redirect_uri={redirect_uri}&"
         f"response_type=code&"
-        f"redirect_uri={current_url}&"
         f"approval_prompt=force&"
         f"scope={scope}"
     )
-    
-    if st.session_state.debug_mode:
-        st.write(f"Auth URL generated with redirect to: {current_url}")
-    
     return auth_url
-
-# Check for authorization code in URL
-def check_url_for_auth_code():
-    query_params = st.query_params
-    if 'code' in query_params:
-        st.session_state.auth_code = query_params['code']
-        st.session_state.auth_success = True
-        st.query_params.clear()
-        set_phase('upload')
-        return True
-    return False
 
 # Function to handle file upload
 def handle_upload():
-    # Verify that we have all required data
     if not st.session_state.client_id:
         st.error("Client ID is missing. Please go back to the credentials step.")
         return
@@ -224,17 +203,14 @@ def handle_upload():
         st.error("No CSV file selected. Please upload a workout CSV file.")
         return
     
-    # Debug section
     if st.session_state.debug_mode:
         st.write("Debug info:")
         st.write(f"Client ID: '{st.session_state.client_id}'")
         st.write(f"Client Secret: '{st.session_state.client_secret[:3]}...'")
         st.write(f"Auth Code: '{st.session_state.auth_code[:10]}...'")
     
-    # Parse CSV
     description, elapsed_time = parse_csv(st.session_state.uploaded_file)
     
-    # Get access token
     access_token = get_access_token(
         st.session_state.client_id, 
         st.session_state.client_secret, 
@@ -246,10 +222,8 @@ def handle_upload():
         st.error("Failed to get access token. Please check your credentials and try again.")
         return
     
-    # Generate a unique activity name
     unique_name = generate_unique_name(st.session_state.activity_name)
     
-    # Create the activity
     current_time = datetime.now().strftime("%Y-%m-%dT%H:%M:%SZ")
     result = create_activity(
         access_token=access_token,
@@ -271,7 +245,6 @@ def handle_upload():
 def main():
     init_session_state()
     
-    # App settings in sidebar
     with st.sidebar:
         st.title("App Settings")
         st.session_state.debug_mode = st.toggle("Debug Mode", value=st.session_state.debug_mode)
@@ -281,30 +254,22 @@ def main():
         
         st.divider()
         
-        # Reset button
         if st.button("Reset Application"):
+            debug_mode = st.session_state.debug_mode
             for key in list(st.session_state.keys()):
-                if key != 'debug_mode':  # Preserve debug setting
+                if key != 'debug_mode':
                     del st.session_state[key]
             st.session_state.phase = 'credentials'
             st.session_state.client_id = ''
             st.session_state.client_secret = ''
+            st.session_state.redirect_uri = 'https://www.example.com'
             st.session_state.auth_code = ''
             st.session_state.auth_success = False
+            st.session_state.debug_mode = debug_mode
             st.success("Application has been reset.")
             st.rerun()
     
-    # Check if authorization code is in URL
-    auth_code_in_url = check_url_for_auth_code()
-    
-    # Show success message if authorization was successful
-    if st.session_state.auth_success and auth_code_in_url:
-        st.success("Authorization successful! Your code has been captured automatically.")
-        time.sleep(2)  # Give user time to see the message
-    
-    # Determine which page to show
     if st.session_state.phase == 'credentials':
-        # Credentials page
         st.markdown('### 1. API Credentials', unsafe_allow_html=True)
         
         st.text_input("Strava Client ID:", key="client_id_input", 
@@ -316,26 +281,59 @@ def main():
                       placeholder="Enter your Strava Client Secret",
                       type="password")
         
+        st.text_input("Redirect URI:", key="redirect_uri_input", 
+                      value=st.session_state.get('redirect_uri', 'https://www.example.com'),
+                      placeholder="Enter your redirect URI (e.g., https://www.example.com)")
+        
         st.button("Continue to Authorization", on_click=save_credentials)
         
     elif st.session_state.phase == 'authorization':
-        # Authorization page
-        st.markdown('### 2. Authorization', unsafe_allow_html=True)
+        st.markdown('### 2. Manual Authorization', unsafe_allow_html=True)
         
         st.info(f"""
         Client ID: {st.session_state.client_id}
+        Redirect URI: {st.session_state.redirect_uri}
         
-        Click the button below to connect to your Strava account.
-        **Important:** Ensure the authorization process completes in the same browser tab.
+        Follow these steps to authorize with Strava:
+        1. Click the "Open Strava Authorization" button below
+        2. Log in to your Strava account if needed
+        3. Authorize the app
+        4. After authorization, you'll be redirected to {st.session_state.redirect_uri}?code=...
+        5. Copy the authorization code from the URL (after "code=" and before "&" or the end)
+        6. Paste the code in the field below
+        """)
+        
+        st.markdown("""
+        **Important:** Ensure the Redirect URI matches the one registered in your Strava app settings at 
+        [Strava API Settings](https://www.strava.com/settings/api).
         """)
         
         auth_url = get_auth_url()
-        st.markdown(f'<a href="{auth_url}" target="_self" style="text-decoration:none;">'
-                    f'<button style="background-color: #fc4c02; color: white; border: none; padding: 10px 20px; border-radius: 5px;">'
-                    f'🔑 Authenticate with Strava</button></a>', unsafe_allow_html=True)
         
-        if st.button("Back to Credentials"):
-            set_phase('credentials')
+        st.markdown(f'<a href="{auth_url}" target="_blank" style="text-decoration:none;">'
+                    f'<button style="background-color: #fc4c02; color: white; border: none; padding: 10px 20px; border-radius: 5px;">'
+                    f'🔑 Open Strava Authorization</button></a>', unsafe_allow_html=True)
+        
+        st.text_input("Paste authorization code here:", key="manual_auth_code")
+        
+        col1, col2 = st.columns([1, 1])
+        with col1:
+            if st.button("Verify & Continue"):
+                if verify_auth_code():
+                    st.rerun()
+        with col2:
+            if st.button("Back to Credentials"):
+                set_phase('credentials')
+        
+        with st.expander("Help: How to find the authorization code"):
+            st.markdown(f"""
+            After authorizing with Strava, you'll be redirected to a URL like:
+                        Copy only the part after `code=` and before the next `&` or the end of the URL.
+                        In the example above, you would copy: `1a2b3c4d5e6f7g8h9i0j`
+
+                        Paste this code in the field above and click "Verify & Continue".
+                        """)
+            
             
     elif st.session_state.phase == 'upload':
         # Upload page
