@@ -210,7 +210,7 @@ def handle_upload():
 # Main application
 def main():
     init_session_state()
-    redirect_uri = os.getenv("REDIRECT_URI", "http://localhost:8501/")
+    redirect_uri = os.getenv("REDIRECT_URI", "https://stravaflexa.onrender.com/")
     
     # Process authorization code from redirect
     if st.session_state.phase == 'authorization':
