@@ -210,7 +210,7 @@ def handle_upload():
 # Main application
 def main():
     init_session_state()
-    redirect_uri = os.getenv("REDIRECT_URI", "https://stravaflexa.onrender.com/")
+    redirect_uri = os.getenv("REDIRECT_URI", "http://localhost:8501/")
     
     # Process authorization code from redirect
     if st.session_state.phase == 'authorization':
@@ -291,17 +291,10 @@ def main():
         st.markdown('### 3. Workout Details', unsafe_allow_html=True)
         st.info(
             "You are already authorized with Strava. Your credentials are set and shown below for verification. "
-            "You can update them if needed under 'Edit Credentials'."
         )
         st.write(f"**Strava Client ID:** {st.session_state.client_id}")
         st.write(f"**Strava Client Secret:** {'*' * len(st.session_state.client_secret)}")  # Mask the secret
-        # with st.expander("Edit Credentials"):
-        #     temp_client_id = st.text_input("Strava Client ID:", key="client_id_input_upload", value=st.session_state.client_id)
-        #     temp_client_secret = st.text_input("Strava Client Secret:", key="client_secret_input_upload", value=st.session_state.client_secret, type="password")
-        #     if st.button("Update Credentials"):
-        #         st.session_state.client_id = temp_client_id
-        #         st.session_state.client_secret = temp_client_secret
-        #         st.success("Credentials updated successfully!")
+
         st.info(f"Token expires at: {datetime.fromtimestamp(st.session_state.token_data['expires_at']) if st.session_state.token_data else 'N/A'}")
         st.text_input("Activity Name:", key="activity_name", placeholder="e.g., Deadlift Session")
         st.markdown("🏋️ Drag and drop your CSV file here or click to upload", unsafe_allow_html=True)
