@@ -149,12 +149,28 @@ def get_credentials():
 def parse_csv(file):
     try:
         df = pd.read_csv(file)
+        # Normalize column names by stripping spaces and handling variations
+        df.columns = [col.strip().replace(' ', '').replace('(kg)', 'kg') for col in df.columns]
         if 'Load' in df.columns:
             df['Load'] = df['Load'].str.extract(r'([\d.]+)\s*kg', expand=False).astype(float)
             total_weight = df['Load'].sum()
+        elif 'Weight' in df.columns:
+            df['Weight'] = df['Weight'].str.extract(r'([\d.]+)\s*kg', expand=False).astype(float)
+            total_weight = df['Weight'].sum()
+        elif 'Loadkg' in df.columns:
+            df['Loadkg'] = df['Loadkg)'].str.extract(r'([\d.]+)\s*kg', expand=False).astype(float)
+            total_weight = df['Loadkg'].sum()
+        elif 'Weightkg' in df.columns:
+            df['Weightkg'] = df['Weightkg'].str.extract(r'([\d.]+)\s*kg', expand=False).astype(float)
+            total_weight = df['Weightkg'].sum()
         else:
             total_weight = 0
-        total_reps = df['Reps'].sum() if 'Reps' in df.columns else 0
+        if 'Reps' in df.columns:
+            total_reps = df['Reps'].sum()
+        elif 'Rep' in df.columns:
+            total_reps = df['Rep'].sum()
+        else:
+            total_reps = 0
         total_sets = len(df)
         description = ""
         for _, row in df.iterrows():
@@ -169,7 +185,7 @@ def parse_csv(file):
 
 # Generate a unique activity name
 def generate_unique_name(base_name, total_weight, total_sets, total_reps):
-    return f"{base_name} - {total_weight}kg TT:{total_sets} Sets {total_reps} Reps"
+    return f"{base_name} - {total_weight}kg TT {total_sets} Sets {total_reps} Reps"
 
 # Get access token and refresh token
 def get_access_token(client_id, client_secret, code, debug=False):
