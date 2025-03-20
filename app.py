@@ -177,7 +177,8 @@ def parse_csv(file):
             filtered_row = {col: row[col] for col in df.columns if col.lower() not in ['date', 'athlete']}
             row_data = " | ".join([f"{col}: {val}" for col, val in filtered_row.items()])
             description += f"{row_data}\n"
-        elapsed_time = max(total_sets * 30, 60)
+        # elapsed_time = max(total_sets * 30, 60)
+        elapsed_time = 0
         return description, elapsed_time, total_weight, total_sets, total_reps
     except Exception as e:
         st.error(f"Error parsing CSV: {str(e)}")
