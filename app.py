@@ -1,12 +1,13 @@
 import streamlit as st
-import pandas as pd
-import requests
-from datetime import datetime, timedelta
-import time
 import os
-import uuid
-import json
-import tempfile
+import time
+from datetime import datetime
+
+from auth.credentials import get_credentials, save_credentials
+from auth.oauth import get_access_token, refresh_access_token
+from data.parser import parse_csv, generate_unique_name
+from api.starva_api import create_activity
+from utils.storage import load_temp_storage, save_temp_storage, clean_temp_storage
 
 # Set page configuration
 st.set_page_config(
@@ -14,42 +15,6 @@ st.set_page_config(
     page_icon="🏋️",
     layout="centered"
 )
-
-# File-based temporary storage for credentials
-# This persists across Streamlit restarts unlike in-memory dictionary
-TEMP_DIR = tempfile.gettempdir()
-TEMP_STORAGE_FILE = os.path.join(TEMP_DIR, "strava_uploader_temp_credentials.json")
-
-# Load existing temp storage if it exists
-def load_temp_storage():
-    try:
-        if os.path.exists(TEMP_STORAGE_FILE):
-            with open(TEMP_STORAGE_FILE, 'r') as f:
-                data = json.load(f)
-                # Clean up expired entries
-                current_time = time.time()
-                cleaned_data = {k: v for k, v in data.items() 
-                               if v.get('expires_at', 0) > current_time}
-                # Save cleaned data
-                if len(cleaned_data) != len(data):
-                    save_temp_storage(cleaned_data)
-                return cleaned_data
-    except Exception as e:
-        if st.session_state.get('debug_mode', False):
-            st.error(f"Error loading temp storage: {str(e)}")
-    return {}
-
-# Save temp storage
-def save_temp_storage(data):
-    try:
-        with open(TEMP_STORAGE_FILE, 'w') as f:
-            json.dump(data, f)
-    except Exception as e:
-        if st.session_state.get('debug_mode', False):
-            st.error(f"Error saving temp storage: {str(e)}")
-
-# Global temp_storage variable initialized from file
-temp_storage = load_temp_storage()
 
 # Initialize session state variables
 def init_session_state():
@@ -84,193 +49,30 @@ def init_session_state():
 def set_phase(phase):
     st.session_state.phase = phase
 
-# Save credentials and store in temp_storage
-def save_credentials():
-    if not st.session_state.client_id_input:
-        st.error("Please enter a Client ID.")
-        return
-    if not st.session_state.client_secret_input:
-        st.error("Please enter a Client Secret.")
-        return
-    try:
-        int(st.session_state.client_id_input)
-    except ValueError:
-        st.error("Client ID must be a number.")
-        return
-    st.session_state.client_id = st.session_state.client_id_input
-    st.session_state.client_secret = st.session_state.client_secret_input
-    
-    # Generate a unique key and store credentials in temp_storage
-    temp_key = str(uuid.uuid4())  # Unique identifier
-    expiry_time = time.time() + 300  # 5 minutes expiry
-    
-    # Load latest temp_storage
-    temp_storage = load_temp_storage()
-    temp_storage[temp_key] = {
-        'client_id': st.session_state.client_id,
-        'client_secret': st.session_state.client_secret,
-        'expires_at': expiry_time
-    }
-    save_temp_storage(temp_storage)
-    
-    st.session_state.temp_key = temp_key
-    set_phase('authorization')
-
-# Retrieve credentials (from session_state or temp_storage)
-def get_credentials():
-    client_id = st.session_state.client_id
-    client_secret = st.session_state.client_secret
-    
-    # If credentials are missing in session_state, check temp_storage
-    if not client_id or not client_secret:
-        # First try temp_key from session_state
-        temp_key = st.session_state.get('temp_key')
-        
-        # If not found, check URL query parameters
-        if not temp_key:
-            temp_key = st.query_params.get('state')
-        
-        if temp_key:
-            # Reload temp_storage to get latest
-            temp_storage = load_temp_storage()
-            if temp_key in temp_storage:
-                client_id = temp_storage[temp_key]['client_id']
-                client_secret = temp_storage[temp_key]['client_secret']
-                # Restore to session_state
-                st.session_state.client_id = client_id
-                st.session_state.client_secret = client_secret
-                st.session_state.temp_key = temp_key
-                if st.session_state.debug_mode:
-                    st.write(f"Debug: Restored credentials from temp_storage using key: {temp_key}")
-    
-    return client_id, client_secret
-
-# Parse CSV and extract details
-def parse_csv(file):
-    try:
-        df = pd.read_csv(file)
-        # Normalize column names by stripping spaces and handling variations
-        df.columns = [col.strip().replace(' ', '').replace('(kg)', 'kg') for col in df.columns]
-        if 'Load' in df.columns:
-            df['Load'] = df['Load'].str.extract(r'([\d.]+)\s*kg', expand=False).astype(float)
-            total_weight = df['Load'].sum()
-        elif 'Weight' in df.columns:
-            df['Weight'] = df['Weight'].str.extract(r'([\d.]+)\s*kg', expand=False).astype(float)
-            total_weight = df['Weight'].sum()
-        elif 'Loadkg' in df.columns:
-            df['Loadkg'] = df['Loadkg)'].str.extract(r'([\d.]+)\s*kg', expand=False).astype(float)
-            total_weight = df['Loadkg'].sum()
-        elif 'Weightkg' in df.columns:
-            df['Weightkg'] = df['Weightkg'].str.extract(r'([\d.]+)\s*kg', expand=False).astype(float)
-            total_weight = df['Weightkg'].sum()
-        else:
-            total_weight = 0
-        if 'Reps' in df.columns:
-            total_reps = df['Reps'].sum()
-        elif 'Rep' in df.columns:
-            total_reps = df['Rep'].sum()
-        else:
-            total_reps = 0
-        total_sets = len(df)
-        description = ""
-        for _, row in df.iterrows():
-            filtered_row = {col: row[col] for col in df.columns if col.lower() not in ['date', 'athlete']}
-            row_data = " | ".join([f"{col}: {val}" for col, val in filtered_row.items()])
-            description += f"{row_data}\n"
-        # elapsed_time = max(total_sets * 30, 60)
-        elapsed_time = 0
-        return description, elapsed_time, total_weight, total_sets, total_reps
-    except Exception as e:
-        st.error(f"Error parsing CSV: {str(e)}")
-        return "Error parsing workout data", 60, 0, 0, 0
-
-# Generate a unique activity name
-def generate_unique_name(base_name, total_weight, total_sets, total_reps):
-    return f"{base_name} - {total_weight}kg TT {total_sets} Sets {total_reps} Reps"
-
-# Get access token and refresh token
-def get_access_token(client_id, client_secret, code, debug=False):
-    url = "https://www.strava.com/oauth/token"
-    payload = {
-        "client_id": int(client_id),
-        "client_secret": client_secret,
-        "code": code,
-        "grant_type": "authorization_code"
-    }
-    if debug:
-        st.write("Debug - Token Exchange Request:", payload)
-    response = requests.post(url, data=payload)
-    if response.status_code == 200:
-        token_data = response.json()
-        if debug:
-            safe_token_data = {k: v if k != 'access_token' else v[:10] + '...' for k, v in token_data.items()}
-            st.write("Token Exchange Successful:", safe_token_data)
-        return token_data
-    else:
-        st.error(f"Token Exchange Error: {response.text}")
-        return None
-
-# Refresh access token
-def refresh_access_token(client_id, client_secret, refresh_token, debug=False):
-    url = "https://www.strava.com/oauth/token"
-    payload = {
-        "client_id": int(client_id),
-        "client_secret": client_secret,
-        "refresh_token": refresh_token,
-        "grant_type": "refresh_token"
-    }
-    response = requests.post(url, data=payload)
-    if response.status_code == 200:
-        token_data = response.json()
-        if debug:
-            safe_token_data = {k: v if k != 'access_token' else v[:10] + '...' for k, v in token_data.items()}
-            st.write("Token Refresh Successful:", safe_token_data)
-        return token_data
-    else:
-        st.error(f"Token Refresh Error: {response.text}")
-        return None
-
-# Create a custom activity
-def create_activity(access_token, name, activity_type, start_date, elapsed_time, description=None, debug=False):
-    url = "https://www.strava.com/api/v3/activities"
-    headers = {"Authorization": f"Bearer {access_token}"}
-    payload = {
-        "name": name,
-        "type": activity_type,
-        "start_date_local": start_date,
-        "elapsed_time": elapsed_time,
-        "description": description
-    }
-    if debug:
-        st.write("Debug - Create Activity Request:", payload)
-    response = requests.post(url, headers=headers, data=payload)
-    if response.status_code == 201:
-        if debug:
-            st.write("Create Activity Response:", response.json())
-        return response.json()
-    else:
-        st.error(f"Error creating activity: {response.text}")
-        return None
-
 # Handle file upload
 def handle_upload():
     if 'token_data' not in st.session_state or st.session_state.token_data is None:
         st.error("No token data available. Please authorize with Strava first.")
         return
+    
     token_data = st.session_state.token_data
     current_time = int(time.time())
+    
+    # Check if token is expired and refresh if needed
     if current_time >= token_data['expires_at']:
         client_id, client_secret = get_credentials()
         if not client_id or not client_secret:
             st.error("Credentials missing. Please re-enter them in the Credentials phase.")
             set_phase('credentials')
             return
+        
         new_token_data = refresh_access_token(
             client_id,
             client_secret,
             token_data['refresh_token'],
             debug=st.session_state.debug_mode
         )
+        
         if new_token_data:
             st.session_state.token_data = new_token_data
             access_token = new_token_data['access_token']
@@ -279,15 +81,21 @@ def handle_upload():
             return
     else:
         access_token = token_data['access_token']
+    
+    # Validate inputs
     if not st.session_state.activity_name:
         st.error("Please enter an activity name.")
         return
+    
     if st.session_state.uploaded_file is None:
         st.error("No CSV file selected. Please upload a workout CSV file.")
         return
-    description, elapsed_time, total_weight, total_sets, total_reps = parse_csv(st.session_state.uploaded_file)
+    
+    # Parse CSV and create activity
+    description, elapsed_time, total_weight, total_sets, total_reps = parse_csv(st.session_state.uploaded_file , activity_name = st.session_state.activity_name)
     unique_name = generate_unique_name(st.session_state.activity_name, total_weight, total_sets, total_reps)
     current_time_str = datetime.now().strftime("%Y-%m-%dT%H:%M:%SZ")
+    
     result = create_activity(
         access_token=access_token,
         name=unique_name,
@@ -297,22 +105,12 @@ def handle_upload():
         description=description,
         debug=st.session_state.debug_mode
     )
+    
     if result:
         st.success(f"Activity '{unique_name}' created successfully on Strava!")
         st.markdown("[View on Strava](https://www.strava.com/dashboard)", unsafe_allow_html=True)
     else:
         st.error("Error creating activity. Check your Strava API limits.")
-
-# Clean up temp storage entries
-def clean_temp_storage():
-    temp_storage = load_temp_storage()
-    # Clean any old entries
-    current_time = time.time()
-    cleaned_storage = {k: v for k, v in temp_storage.items() 
-                      if v.get('expires_at', 0) > current_time}
-    if len(cleaned_storage) != len(temp_storage):
-        save_temp_storage(cleaned_storage)
-    return cleaned_storage
 
 # Main application
 def main():
@@ -320,7 +118,7 @@ def main():
     # Clean up old entries in temp_storage
     clean_temp_storage()
     
-    redirect_uri = os.getenv("REDIRECT_URI", "https://stravaflexa.onrender.com/")
+    redirect_uri = os.getenv("REDIRECT_URI", "http://localhost:8501")
     
     # Process authorization code from redirect
     if st.session_state.phase == 'authorization':
@@ -442,6 +240,7 @@ def main():
         uploaded_file = st.file_uploader("Upload CSV file", type=["csv"], key="uploaded_file", label_visibility="collapsed")
         if uploaded_file:
             st.success(f"File uploaded: {uploaded_file.name}")
+            import pandas as pd
             df = pd.read_csv(uploaded_file)
             st.write("Preview:", df.head())
             uploaded_file.seek(0)

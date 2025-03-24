@@ -1,5 +1,34 @@
-myvenv/
-
+# Python-related
+*.pyc
 __pycache__/
+*.pyo
+*.pyd
+*.pkl
+*.egg-info/
+*.ipynb_checkpoints/
 
+# Virtual environment
+venv/
 .env
+.envrc
+*.log
+
+# CSV and data files
+*.csv
+*.xlsx
+*.json
+*.db
+*.sqlite3
+
+# IDE and editor files
+.vscode/
+.idea/
+*.iml
+
+# Streamlit cache
+.streamlit/
+*.cache
+
+# OS-specific
+.DS_Store
+Thumbs.db
