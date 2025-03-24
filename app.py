@@ -118,7 +118,7 @@ def main():
     # Clean up old entries in temp_storage
     clean_temp_storage()
     
-    redirect_uri = os.getenv("REDIRECT_URI", "https://starva-ckcxwntgxbpaqmgc4xtytu.streamlit.app/")
+    redirect_uri = "https://starva-ckcxwntgxbpaqmgc4xtytu.streamlit.app/"
     
     # Process authorization code from redirect
     if st.session_state.phase == 'authorization':
