@@ -2,7 +2,6 @@ import streamlit as st
 import os
 import time
 from datetime import datetime
-import urllib.parse
 
 from auth.credentials import get_credentials, save_credentials
 from auth.oauth import get_access_token, refresh_access_token
@@ -17,37 +16,13 @@ st.set_page_config(
     layout="centered"
 )
 
-# Get the current URL for redirect URI
-def get_redirect_uri():
-    # Check if we're running in Streamlit Cloud
-    if os.getenv('STREAMLIT_SERVER_PORT'):
-        # Get the current URL from Streamlit's environment
-        server_address = os.getenv('STREAMLIT_SERVER_ADDRESS', '')
-        if not server_address:
-            # Try to get the URL from the browser
-            try:
-                server_address = st.experimental_get_query_params().get('_stcore_host', [''])[0]
-            except:
-                server_address = ''
-        
-        if server_address:
-            # Ensure the URL is properly formatted
-            if not server_address.startswith('http'):
-                server_address = f"https://{server_address}"
-            return server_address
-        else:
-            st.error("Could not determine server address. Please check your Streamlit Cloud configuration.")
-            return None
-    else:
-        # Local development
-        return os.getenv("REDIRECT_URI", "https://starva-ckcxwntgxbpaqmgc4xtytu.streamlit.app/")
-
 # Initialize session state variables
 def init_session_state():
     if 'phase' not in st.session_state:
         st.session_state.phase = 'credentials'
     if 'client_id' not in st.session_state:
         st.session_state.client_id = ''
+
     if 'client_secret' not in st.session_state:
         st.session_state.client_secret = ''
     if 'token_data' not in st.session_state:
@@ -58,8 +33,6 @@ def init_session_state():
         st.session_state.debug_mode = False
     if 'temp_key' not in st.session_state:
         st.session_state.temp_key = None
-    if 'activity_type' not in st.session_state:
-        st.session_state.activity_type = "WeightTraining"
     
     # Check if we're returning from OAuth redirect with state parameter
     query_params = st.query_params
@@ -120,17 +93,14 @@ def handle_upload():
         return
     
     # Parse CSV and create activity
-    description, elapsed_time, total_weight, total_sets, total_reps = parse_csv(
-        st.session_state.uploaded_file,
-        activity_type=st.session_state.activity_type
-    )
+    description, elapsed_time, total_weight, total_sets, total_reps = parse_csv(st.session_state.uploaded_file ,activity_name =st.session_state.activity_name)
     unique_name = generate_unique_name(st.session_state.activity_name, total_weight, total_sets, total_reps)
     current_time_str = datetime.now().strftime("%Y-%m-%dT%H:%M:%SZ")
     
     result = create_activity(
         access_token=access_token,
         name=unique_name,
-        activity_type=st.session_state.activity_type,
+        activity_type="WeightTraining",
         start_date=current_time_str,
         elapsed_time=elapsed_time,
         description=description,
@@ -149,10 +119,7 @@ def main():
     # Clean up old entries in temp_storage
     clean_temp_storage()
     
-    redirect_uri = get_redirect_uri()
-    if not redirect_uri:
-        st.error("Failed to determine redirect URI. Please check your Streamlit Cloud configuration.")
-        return
+    redirect_uri = os.getenv("REDIRECT_URI", "http://localhost:8501")
     
     # Process authorization code from redirect
     if st.session_state.phase == 'authorization':
@@ -164,10 +131,6 @@ def main():
                 set_phase('credentials')
             else:
                 code = query_params["code"]
-                if st.session_state.debug_mode:
-                    st.info(f"Received authorization code: {code[:10]}...")
-                    st.info(f"Using redirect URI: {redirect_uri}")
-                
                 token_data = get_access_token(client_id, client_secret, code, debug=st.session_state.debug_mode)
                 if token_data:
                     st.session_state.token_data = token_data
@@ -184,8 +147,6 @@ def main():
                     set_phase('upload')
                 else:
                     st.error("Failed to get access token. Please try authorizing again.")
-                    if st.session_state.debug_mode:
-                        st.error("Debug info: Check if the redirect URI matches exactly what's configured in Strava API settings.")
     
     # Sidebar settings
     with st.sidebar:
@@ -193,8 +154,6 @@ def main():
         st.session_state.debug_mode = st.toggle("Debug Mode", value=st.session_state.debug_mode)
         if st.session_state.debug_mode:
             st.info("Debug mode is enabled. Detailed request and response information will be shown.")
-            st.info(f"Current Redirect URI: {redirect_uri}")
-            st.info(f"Environment variables: {dict(os.environ)}")
         st.divider()
         if st.button("Reset Application"):
             debug_mode = st.session_state.debug_mode
@@ -207,7 +166,6 @@ def main():
             st.session_state.token_data = None
             st.session_state.auth_success = False
             st.session_state.debug_mode = debug_mode
-            st.session_state.activity_type = "WeightTraining"
             
             # Clear temp_storage on reset
             temp_storage = load_temp_storage()
@@ -228,15 +186,9 @@ def main():
     elif st.session_state.phase == 'authorization':
         st.markdown('### 2. Authorize with Strava', unsafe_allow_html=True)
         temp_key = st.session_state.get('temp_key', '')
-        
-        # Ensure redirect URI is properly encoded
-        encoded_redirect_uri = urllib.parse.quote(redirect_uri, safe=':/?=&')
-        auth_url = f"https://www.strava.com/oauth/authorize?client_id={st.session_state.client_id}&response_type=code&redirect_uri={encoded_redirect_uri}&approval_prompt=force&scope=activity:write&state={temp_key}"
-        
+        auth_url = f"https://www.strava.com/oauth/authorize?client_id={st.session_state.client_id}&response_type=code&redirect_uri={redirect_uri}&approval_prompt=force&scope=activity:write&state={temp_key}"
         st.info(f"""
         **Client ID:** {st.session_state.client_id}
-        **Redirect URI:** {redirect_uri}
-        **Encoded Redirect URI:** {encoded_redirect_uri}
         To authorize:
         1. Click "Authorize with Strava" below.
         2. Log in to Strava and click "Authorize".
@@ -284,15 +236,6 @@ def main():
         st.write(f"**Strava Client ID:** {client_id}")
         st.write(f"**Strava Client Secret:** {'*' * len(client_secret)}")
         st.info(f"Token expires at: {datetime.fromtimestamp(st.session_state.token_data['expires_at']) if st.session_state.token_data else 'N/A'}")
-        
-        # Activity type selector
-        st.selectbox(
-            "Activity Type:",
-            ["WeightTraining", "Running", "Cycling"],
-            key="activity_type",
-            help="Select the type of activity you're uploading"
-        )
-        
         st.text_input("Activity Name:", key="activity_name", placeholder="e.g., Deadlift Session")
         st.markdown("🏋️ Drag and drop your CSV file here or click to upload", unsafe_allow_html=True)
         uploaded_file = st.file_uploader("Upload CSV file", type=["csv"], key="uploaded_file", label_visibility="collapsed")
