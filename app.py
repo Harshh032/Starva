@@ -50,6 +50,7 @@ def init_session_state():
 def set_phase(phase):
     st.session_state.phase = phase
 
+
 # Handle file upload
 def handle_upload():
     if 'token_data' not in st.session_state or st.session_state.token_data is None:
@@ -84,17 +85,25 @@ def handle_upload():
         access_token = token_data['access_token']
     
     # Validate inputs
-    if not st.session_state.activity_name:
-        st.error("Please enter an activity name.")
-        return
-    
     if st.session_state.uploaded_file is None:
         st.error("No CSV file selected. Please upload a workout CSV file.")
         return
     
+    # Get selected exercise (if any)
+    selected_exercise = st.session_state.get('selected_exercise', None)
+    if selected_exercise == "All Exercises":
+        selected_exercise = None
+    
     # Parse CSV and create activity
-    description, elapsed_time, total_weight, total_sets, total_reps = parse_csv(st.session_state.uploaded_file ,activity_name =st.session_state.activity_name)
-    unique_name = generate_unique_name(st.session_state.activity_name, total_weight, total_sets, total_reps)
+    description, elapsed_time, total_weight, total_sets, total_reps, _ = parse_csv(
+        st.session_state.uploaded_file, 
+        selected_exercise
+    )
+    
+    # Use appropriate naming strategy
+    activity_name = st.session_state.activity_name if st.session_state.activity_name else None
+    unique_name = generate_unique_name(activity_name, total_weight, total_sets, total_reps, selected_exercise)
+    
     current_time_str = datetime.now().strftime("%Y-%m-%dT%H:%M:%SZ")
     
     result = create_activity(
@@ -113,7 +122,80 @@ def handle_upload():
     else:
         st.error("Error creating activity. Check your Strava API limits.")
 
-# Main application
+
+def upload_phase():
+    st.markdown('### 3. Workout Details', unsafe_allow_html=True)
+    st.info("You are already authorized with Strava. Your credentials are set and shown below for verification.")
+    client_id, client_secret = get_credentials()
+    st.write(f"**Strava Client ID:** {client_id}")
+    st.write(f"**Strava Client Secret:** {'*' * len(client_secret)}")
+    st.info(f"Token expires at: {datetime.fromtimestamp(st.session_state.token_data['expires_at']) if st.session_state.token_data else 'N/A'}")
+    
+    # Upload file first to get exercise options
+    st.markdown("🏋️ Drag and drop your CSV file here or click to upload", unsafe_allow_html=True)
+    uploaded_file = st.file_uploader("Upload CSV file", type=["csv"], key="uploaded_file", label_visibility="collapsed")
+    
+    if uploaded_file:
+        st.success(f"File uploaded: {uploaded_file.name}")
+        
+        try:
+            # Get exercise options from the file
+            import pandas as pd
+            df = pd.read_csv(uploaded_file)
+            
+            # Preview the data
+            st.write("Preview:", df.head())
+            
+            # Get unique exercises
+            exercises = df['Exercise'].unique().tolist()
+            exercise_options = ["All Exercises"] + exercises
+            
+            # Reset file position for later use
+            uploaded_file.seek(0)
+            
+            # Only show exercise selector
+            st.selectbox("Select Exercise (or show all):", 
+                         options=exercise_options, 
+                         key="selected_exercise",
+                         index=0)
+            
+            # Show description preview
+            if st.button("Generate Preview"):
+                selected_exercise = st.session_state.selected_exercise
+                if selected_exercise == "All Exercises":
+                    selected_exercise = None
+                    
+                description, _, total_weight, total_sets, total_reps, _ = parse_csv(
+                    uploaded_file, 
+                    selected_exercise
+                )
+                uploaded_file.seek(0)  # Reset position again
+                
+                # Generate name for activity
+                activity_name = generate_unique_name(None, total_weight, total_sets, total_reps, selected_exercise)
+                st.session_state.activity_name = activity_name
+                
+                st.markdown("### Activity Preview")
+                st.write(f"**Generated Name:** {activity_name}")
+                st.text_area("Description Preview:", value=description, height=300, disabled=True)
+                
+                # Reset preview when changing selection
+                st.session_state.preview_generated = True
+            
+            col1, col2 = st.columns([1, 1])
+            with col1:
+                if st.button("Upload to Strava"):
+                    handle_upload()
+            with col2:
+                if st.button("Back to Authorization"):
+                    set_phase('authorization')
+                    
+        except Exception as e:
+            st.error(f"Error processing CSV file: {str(e)}")
+            st.info("Please make sure your CSV file has an 'Exercise' column.")
+    else:
+        st.info("Please upload a CSV file to continue.")
+
 def main():
     init_session_state()
     # Clean up old entries in temp_storage
@@ -230,28 +312,7 @@ def main():
     
     # Upload phase
     elif st.session_state.phase == 'upload':
-        st.markdown('### 3. Workout Details', unsafe_allow_html=True)
-        st.info("You are already authorized with Strava. Your credentials are set and shown below for verification.")
-        client_id, client_secret = get_credentials()
-        st.write(f"**Strava Client ID:** {client_id}")
-        st.write(f"**Strava Client Secret:** {'*' * len(client_secret)}")
-        st.info(f"Token expires at: {datetime.fromtimestamp(st.session_state.token_data['expires_at']) if st.session_state.token_data else 'N/A'}")
-        st.text_input("Activity Name:", key="activity_name", placeholder="e.g., Deadlift Session")
-        st.markdown("🏋️ Drag and drop your CSV file here or click to upload", unsafe_allow_html=True)
-        uploaded_file = st.file_uploader("Upload CSV file", type=["csv"], key="uploaded_file", label_visibility="collapsed")
-        if uploaded_file:
-            st.success(f"File uploaded: {uploaded_file.name}")
-            import pandas as pd
-            df = pd.read_csv(uploaded_file)
-            st.write("Preview:", df.head())
-            uploaded_file.seek(0)
-        col1, col2 = st.columns([1, 1])
-        with col1:
-            if st.button("Upload to Strava"):
-                handle_upload()
-        with col2:
-            if st.button("Back to Authorization"):
-                set_phase('authorization')
+        upload_phase()
 
 if __name__ == "__main__":
     main()
