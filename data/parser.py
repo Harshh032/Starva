@@ -118,4 +118,4 @@ def generate_unique_name(base_name, total_weight, total_sets, total_reps, select
         return f"{base_name} - {date_str} - {int(total_weight)}kg {total_sets}S {int(total_reps)}R"
     else:
         # Multiple exercises with default name
-        return f"Workout {date_str} - {int(total_weight)}kg {total_sets}S {int(total_reps)}R"
+        return f"FLEX {date_str} - {int(total_weight)}kg {total_sets}S {int(total_reps)}R"
