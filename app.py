@@ -1,3 +1,4 @@
+
 import streamlit as st
 import os
 import time
@@ -100,9 +101,12 @@ def handle_upload():
         selected_exercise
     )
     
-    # Use appropriate naming strategy
-    activity_name = st.session_state.activity_name if st.session_state.activity_name else None
-    unique_name = generate_unique_name(activity_name, total_weight, total_sets, total_reps, selected_exercise)
+    # Check if we already have a name from the preview
+    if st.session_state.get('activity_name') and st.session_state.activity_name:
+        unique_name = st.session_state.activity_name
+    else:
+        # Use appropriate naming strategy - pass None for base_name to use default
+        unique_name = generate_unique_name(None, total_weight, total_sets, total_reps, selected_exercise)
     
     current_time_str = datetime.now().strftime("%Y-%m-%dT%H:%M:%SZ")
     
@@ -171,7 +175,7 @@ def upload_phase():
                 )
                 uploaded_file.seek(0)  # Reset position again
                 
-                # Generate name for activity
+                # Generate name for activity - just once
                 activity_name = generate_unique_name(None, total_weight, total_sets, total_reps, selected_exercise)
                 st.session_state.activity_name = activity_name
                 
@@ -202,7 +206,7 @@ def main():
     # Clean up old entries in temp_storage
     clean_temp_storage()
     
-    redirect_uri = os.getenv("REDIRECT_URI", "https://starva.onrender.com")
+    redirect_uri = os.getenv("REDIRECT_URI", "http://localhost:8501/")
     
     # Process authorization code from redirect
     if st.session_state.phase == 'authorization':
