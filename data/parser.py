@@ -105,17 +105,16 @@ def parse_csv(file, selected_exercise=None):
         print(f"Error parsing CSV: {str(e)}")
         return f"Error parsing workout data: {str(e)}", 60, 0, 0, 0, []
 
-# Generate a unique activity name based on selection mode
 def generate_unique_name(base_name, total_weight, total_sets, total_reps, selected_exercise=None):
     from datetime import datetime
     date_str = datetime.now().strftime("%b %d")
     
     if selected_exercise:
         # Single exercise mode
-        return f"{selected_exercise} - {date_str} - {int(total_weight)}kg {total_sets}S {int(total_reps)}R"
+        return f"{selected_exercise} - {int(total_weight)}kg {total_sets}S {int(total_reps)}R"
     elif base_name:
         # Multiple exercises with custom name
-        return f"{base_name} - {date_str} - {int(total_weight)}kg {total_sets}S {int(total_reps)}R"
+        return f"{base_name} - {int(total_weight)}kg {total_sets}S {int(total_reps)}R"
     else:
         # Multiple exercises with default name
-        return f"FLEX {date_str} - {int(total_weight)}kg {total_sets}S {int(total_reps)}R"
+        return f"FLEX - {int(total_weight)}kg {total_sets}S {int(total_reps)}R"
